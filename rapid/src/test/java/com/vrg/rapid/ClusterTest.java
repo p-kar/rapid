@@ -216,7 +216,7 @@ public class ClusterTest {
         verifyCluster(numNodes, seedHost);
         final HostAndPort nodeToFail = HostAndPort.fromParts("127.0.0.1", basePort + 2);
         failSomeNodes(Collections.singletonList(nodeToFail));
-        waitAndVerifyAgreement(numNodes - 1, 10, 1000, seedHost);
+        waitAndVerifyAgreement(numNodes - 1, 20, 1000, seedHost);
         verifyNumClusterInstances(numNodes - 1);
     }
 
@@ -337,7 +337,41 @@ public class ClusterTest {
         // we may have less than numFailedNodes entries in the set
         failedNodes.forEach(host -> dropFirstNAtServer(host, 100, MembershipServiceGrpc.METHOD_RECEIVE_PROBE));
         createCluster(numNodes, seedHost);
-        waitAndVerifyAgreement(numNodes - failedNodes.size(), 15, 1000, seedHost);
+        waitAndVerifyAgreement(numNodes - failedNodes.size(), 30, 1000, seedHost);
+        verifyNumClusterInstances(numNodes);
+    }
+
+    /**
+     * This test starts with a 50 node cluster. We then pick a node, and fail more than L but less
+     * than H edges from its monitors, and see whether it is removed from the network.
+     */
+    @Test
+    public void fewerThanHFaultyLinks() throws IOException, InterruptedException {
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 3000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
+        RpcClient.Conf.RPC_PROBE_TIMEOUT = 1000;
+        useStaticFd = true;
+        final int numNodes = 50;
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+
+        // These nodes will drop the first 100 probe requests they receive
+        final HostAndPort failedNode = HostAndPort.fromParts("127.0.0.1", basePort + 1);
+        // Since the random function returns a set of failed nodes,
+        // we may have less than numFailedNodes entries in the set
+        createCluster(numNodes, seedHost);
+        waitAndVerifyAgreement(numNodes, 15, 1000, seedHost);
+        verifyNumClusterInstances(numNodes);
+
+        final Set<HostAndPort> monitors = new HashSet<>();
+        staticFds.entrySet().forEach(entry -> {
+                if (entry.getValue().monitorees != null && entry.getValue().monitorees.contains(failedNode)) {
+                    monitors.add(entry.getKey());
+                }
+            }
+        );
+        // This gets 4 monitors to complain about the failedNode
+        monitors.stream().limit(4).forEach(m -> staticFds.get(m).addFailedNodes(Collections.singleton(failedNode)));
+        waitAndVerifyAgreement(numNodes - 1, 15, 1000, seedHost);
         verifyNumClusterInstances(numNodes);
     }
 

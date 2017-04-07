@@ -167,6 +167,18 @@ final class WatermarkBuffer {
     }
 
     /**
+     * Check if a node has less than H but more than L reports about it.
+     *
+     * @param node the node to check for in the pre-proposal set.
+     * @return True if the node has less than H but more than L reports about it.
+     */
+    boolean isNodeInFlux(final HostAndPort node) {
+        synchronized (lock) {
+            return preProposal.contains(node);
+        }
+    }
+
+    /**
      * Clears all view change reports being tracked. To be used right after a view change.
      */
     void clear() {

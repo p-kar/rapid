@@ -28,6 +28,7 @@ import java.util.function.Consumer;
 public class LinkFailureDetectorRunner implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(LinkFailureDetectorRunner.class);
     @GuardedBy("this") private Set<HostAndPort> monitorees = Collections.emptySet();
+    @GuardedBy("this") private final Set<HostAndPort> faultyLinks = new HashSet<>();
     private final ILinkFailureDetector linkFailureDetector;
     private final RpcClient rpcClient;
     private final List<Consumer<HostAndPort>> linkFailureSubscriptions = new ArrayList<>();
@@ -45,8 +46,19 @@ public class LinkFailureDetectorRunner implements Runnable {
      */
     synchronized void updateMembership(final List<HostAndPort> newMonitorees) {
         this.monitorees = new HashSet<>(newMonitorees);
+        this.faultyLinks.clear();
         rpcClient.updateLongLivedConnections(this.monitorees);
         this.linkFailureDetector.onMembershipChange(newMonitorees);
+    }
+
+    /**
+     * Mark an edge as faulty. This is used by MembershipService for failure notification
+     * reinforcement.
+     *
+     * @param faulty The edge to this node will be marked as faulty.
+     */
+    synchronized void markAsFaulty(final HostAndPort faulty) {
+        faultyLinks.add(faulty);
     }
 
     /**
@@ -76,13 +88,13 @@ public class LinkFailureDetectorRunner implements Runnable {
             }
             final List<ListenableFuture<Void>> healthChecks = new ArrayList<>();
             for (final HostAndPort monitoree : monitorees) {
-                if (!linkFailureDetector.hasFailed(monitoree)) {
+                if (linkFailureDetector.hasFailed(monitoree) || faultyLinks.contains(monitoree)) {
+                    // Informs MembershipService and other subscribers, if any, about the failure.
+                    linkFailureSubscriptions.forEach(subscriber -> subscriber.accept(monitoree));
+                } else {
                     // Node is up, so send it a probe and attach the callbacks.
                     final ListenableFuture<Void> check = linkFailureDetector.checkMonitoree(monitoree);
                     healthChecks.add(check);
-                } else {
-                    // Informs MembershipService and other subscribers, if any, about the failure.
-                    linkFailureSubscriptions.forEach(subscriber -> subscriber.accept(monitoree));
                 }
             }
 
