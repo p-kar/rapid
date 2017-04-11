@@ -104,6 +104,7 @@ public class ClusterTest {
         RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RpcClient.Conf.RPC_TIMEOUT_MEDIUM_MS * 20;
         RpcClient.Conf.RPC_TIMEOUT_MS = RpcClient.Conf.RPC_TIMEOUT_MEDIUM_MS;
         RpcClient.Conf.RPC_PROBE_TIMEOUT = 5000;
+        PingPongFailureDetector.WAIT_TIME_MS = 0;
 
         useStaticFd = false;
         staticFds.clear();
@@ -280,8 +281,8 @@ public class ClusterTest {
      */
     @Test
     public void sixteenFailuresOutOfFiftyNodes() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 3000;
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 1000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
 
         final int numNodes = 50;
         final int failingNodes = 16;
@@ -291,7 +292,7 @@ public class ClusterTest {
         failSomeNodes(IntStream.range(basePort + 2, basePort + 2 + failingNodes)
                 .mapToObj(i -> HostAndPort.fromParts("127.0.0.1", i))
                 .collect(Collectors.toList()));
-        waitAndVerifyAgreement(numNodes - failingNodes, 20, 1000, seedHost);
+        waitAndVerifyAgreement(numNodes - failingNodes, 30, 1000, seedHost);
         verifyNumClusterInstances(numNodes - failingNodes);
     }
 

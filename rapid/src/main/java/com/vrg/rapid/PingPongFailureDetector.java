@@ -41,9 +41,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @NotThreadSafe
 public class PingPongFailureDetector implements ILinkFailureDetector {
+    static long WAIT_TIME_MS = 10000;
     private static final Logger LOG = LoggerFactory.getLogger(PingPongFailureDetector.class);
     private static final Executor BACKGROUND_EXECUTOR = Executors.newSingleThreadScheduledExecutor();
-    private static final int FAILURE_THRESHOLD = 10;
+    private static final int FAILURE_THRESHOLD = 5;
 
     // Number of BOOTSTRAPPING status responses a node is allowed to return before we begin
     // treating that as a failure condition.
@@ -52,6 +53,7 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     private final ConcurrentHashMap<HostAndPort, AtomicInteger> failureCount;
     private final ConcurrentHashMap<HostAndPort, AtomicInteger> bootstrapResponseCount;
     private final RpcClient rpcClient;
+    private long timeSinceViewChange = System.currentTimeMillis();
 
     // A cache for probe messages. Avoids creating an unnecessary copy of a probe message each time.
     private final HashMap<HostAndPort, ProbeMessage> messageHashMap;
@@ -68,6 +70,10 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     // Executed at monitor
     @Override
     public ListenableFuture<Void> checkMonitoree(final HostAndPort monitoree) {
+        // Wait ten seconds since a view change before we begin probing again.
+        if (System.currentTimeMillis() - timeSinceViewChange <= WAIT_TIME_MS) {
+            return Futures.immediateFuture(null);
+        }
         LOG.trace("{} sending probe to {}", address, monitoree);
         final ProbeMessage probeMessage = messageHashMap.get(monitoree);
         final SettableFuture<Void> completionEvent = SettableFuture.create();
@@ -99,6 +105,7 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     public void onMembershipChange(final List<HostAndPort> monitorees) {
         failureCount.clear();
         messageHashMap.clear();
+        timeSinceViewChange = System.currentTimeMillis();
         // TODO: If a monitoree is part of both the old and new configuration, we shouldn't forget its failure count.
         final ProbeMessage.Builder builder = ProbeMessage.newBuilder();
         for (final HostAndPort node: monitorees) {

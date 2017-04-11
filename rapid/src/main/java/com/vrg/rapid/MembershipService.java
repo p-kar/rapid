@@ -352,17 +352,6 @@ final class MembershipService {
 
         proposal.addAll(watermarkBuffer.invalidateFailingLinks(membershipView));
 
-        // If a node we are monitoring has crossed the L threshold, and we are yet to
-        // announce a complaint about that node, then we begin
-        final List<HostAndPort> monitorees = membershipView.getMonitoreesOf(myAddr);
-        for (final HostAndPort monitoree: monitorees) {
-            if (watermarkBuffer.isNodeInFlux(monitoree)) {
-                if (membershipView.isHostPresent(monitoree)) {
-                    linkFailureDetectorRunner.markAsFaulty(monitoree);
-                }
-            }
-        }
-
         // If we have a proposal for this stage, start an instance of consensus on it.
         if (proposal.size() != 0) {
             if (logProposals) {
