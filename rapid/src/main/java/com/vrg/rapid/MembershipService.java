@@ -95,7 +95,7 @@ final class MembershipService {
     private final LinkedBlockingQueue<LinkUpdateMessage> sendQueue = new LinkedBlockingQueue<>();
     private final Lock batchSchedulerLock = new ReentrantLock();
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
-    private final ExecutorService broadcastExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService broadcastExecutor = Executors.newSingleThreadScheduledExecutor();
     private final ScheduledFuture<?> linkUpdateBatcherJob;
     private final ScheduledFuture<?> failureDetectorJob;
 
@@ -484,7 +484,8 @@ final class MembershipService {
             // the current session.
             LOG.trace("{} got kicked out and is shutting down.", myAddr);
             linkFailureDetectorRunner.updateMembership(Collections.emptyList());
-            // TODO: Invoke a "kicked-out" callback here that calls Cluster.shutdown().
+            subscriptions.get(ClusterEvents.KICKED)
+                    .forEach(cb -> cb.accept(statusChanges));
             return;
         }
 
