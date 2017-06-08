@@ -15,7 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.vrg.rapid.monitoring.ILinkFailureDetector;
+import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.JoinMessage;
@@ -70,8 +70,6 @@ import java.util.stream.Collectors;
 final class MembershipService {
     private static final Logger LOG = LoggerFactory.getLogger(MembershipService.class);
     private static final int BATCHING_WINDOW_IN_MS = 100;
-    static int FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
-    static int FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 2000;
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;
     private final HostAndPort myAddr;
@@ -95,7 +93,6 @@ final class MembershipService {
     private final Lock batchSchedulerLock = new ReentrantLock();
     private final ScheduledExecutorService backgroundTasksExecutor;
     private final ScheduledFuture<?> linkUpdateBatcherJob;
-    private final ScheduledFuture<?> failureDetectorJob;
     private final ExecutorService protocolExecutor;
 
     // Fields used by consensus protocol
@@ -110,7 +107,7 @@ final class MembershipService {
         private final HostAndPort myAddr;
         private final ExecutorService protocolExecutor;
         private Map<String, Metadata> metadata = Collections.emptyMap();
-        @Nullable private ILinkFailureDetector linkFailureDetector = null;
+        @Nullable private ILinkFailureDetectorFactory linkFailureDetectorFactory = null;
         @Nullable private RpcClient rpcClient = null;
 
         Builder(final HostAndPort myAddr,
@@ -128,8 +125,8 @@ final class MembershipService {
             return this;
         }
 
-        Builder setLinkFailureDetector(final ILinkFailureDetector linkFailureDetector) {
-            this.linkFailureDetector = linkFailureDetector;
+        Builder setLinkFailureDetector(final ILinkFailureDetectorFactory linkFailureDetectorFactory) {
+            this.linkFailureDetectorFactory = linkFailureDetectorFactory;
             return this;
         }
 
@@ -165,18 +162,20 @@ final class MembershipService {
                 0, BATCHING_WINDOW_IN_MS, TimeUnit.MILLISECONDS);
 
         this.broadcaster.setMembership(membershipView.getRing(0));
+
+        // The LinkFailureDetectorRunner instantiates new failure detector instances on each membership change
+        // using the supplied factory.
+        final ILinkFailureDetectorFactory factory = builder.linkFailureDetectorFactory == null ?
+                                                    new PingPongFailureDetector.Factory(myAddr, rpcClient) :
+                                                    builder.linkFailureDetectorFactory;
+        this.linkFailureDetectorRunner = new LinkFailureDetectorRunner(factory, this.backgroundTasksExecutor);
+
         // this::linkFailureNotification is invoked by the failure detector whenever an edge
         // to a monitor is marked faulty.
-        final ILinkFailureDetector fd  = builder.linkFailureDetector != null
-                                        ? builder.linkFailureDetector
-                                        : new PingPongFailureDetector(myAddr, this.rpcClient);
-        this.linkFailureDetectorRunner = new LinkFailureDetectorRunner(fd, rpcClient);
         this.linkFailureDetectorRunner.registerSubscription(this::linkFailureNotification);
 
         // This primes the link failure detector with the initial set of monitorees.
         linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
-        failureDetectorJob = this.backgroundTasksExecutor.scheduleAtFixedRate(linkFailureDetectorRunner,
-                FAILURE_DETECTOR_INITIAL_DELAY_IN_MS, FAILURE_DETECTOR_INTERVAL_IN_MS, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -484,7 +483,9 @@ final class MembershipService {
      */
     void processProbeMessage(final ProbeMessage probeMessage,
                              final StreamObserver<ProbeResponse> probeResponseObserver) {
-        linkFailureDetectorRunner.handleProbeMessage(probeMessage, probeResponseObserver);
+        LOG.trace("handleProbeMessage at {} from {}", myAddr, probeMessage.getSender());
+        probeResponseObserver.onNext(ProbeResponse.getDefaultInstance());
+        probeResponseObserver.onCompleted();
     }
 
 
@@ -565,7 +566,6 @@ final class MembershipService {
      */
     void shutdown() {
         linkUpdateBatcherJob.cancel(true);
-        failureDetectorJob.cancel(true);
         backgroundTasksExecutor.shutdownNow();
         rpcClient.shutdown();
     }

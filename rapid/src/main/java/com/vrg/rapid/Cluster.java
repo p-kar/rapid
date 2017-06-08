@@ -19,7 +19,7 @@ import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.vrg.rapid.monitoring.ILinkFailureDetector;
+import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -86,7 +86,7 @@ public final class Cluster {
 
     public static class Builder {
         private final HostAndPort listenAddress;
-        @Nullable private ILinkFailureDetector linkFailureDetector = null;
+        @Nullable private ILinkFailureDetectorFactory linkFailureDetectorFactory = null;
         private Metadata metadata = Metadata.getDefaultInstance();
         private List<ServerInterceptor> serverInterceptors = Collections.emptyList();
         private List<ClientInterceptor> clientInterceptors = Collections.emptyList();
@@ -116,12 +116,12 @@ public final class Cluster {
         /**
          * Set a link failure detector to use for monitors to watch their monitorees.
          *
-         * @param linkFailureDetector A link failure detector used as input for Rapid's failure detection.
+         * @param linkFailureDetectorFactory Returns link failure detectors used as input for Rapid's failure detection.
          */
         @ExperimentalApi
-        public Builder setLinkFailureDetector(final ILinkFailureDetector linkFailureDetector) {
-            Objects.requireNonNull(linkFailureDetector);
-            this.linkFailureDetector = linkFailureDetector;
+        public Builder setLinkFailureDetector(final ILinkFailureDetectorFactory linkFailureDetectorFactory) {
+            Objects.requireNonNull(linkFailureDetectorFactory);
+            this.linkFailureDetectorFactory = linkFailureDetectorFactory;
             return this;
         }
 
@@ -150,7 +150,7 @@ public final class Cluster {
          * @throws IOException Thrown if we cannot successfully start a server
          */
         public Cluster join(final HostAndPort seedAddress) throws IOException, InterruptedException {
-            return joinCluster(seedAddress, this.listenAddress, this.linkFailureDetector, this.metadata,
+            return joinCluster(seedAddress, this.listenAddress, this.linkFailureDetectorFactory, this.metadata,
                                this.serverInterceptors, this.clientInterceptors);
         }
 
@@ -160,12 +160,12 @@ public final class Cluster {
          * @throws IOException Thrown if we cannot successfully start a server
          */
         public Cluster start() throws IOException {
-            return startCluster(this.listenAddress, this.linkFailureDetector, this.metadata, this.serverInterceptors);
+            return startCluster(this.listenAddress, this.linkFailureDetectorFactory, this.metadata, this.serverInterceptors);
         }
     }
 
     private static Cluster joinCluster(final HostAndPort seedAddress, final HostAndPort listenAddress,
-               @Nullable final ILinkFailureDetector linkFailureDetector, final Metadata metadata,
+               @Nullable final ILinkFailureDetectorFactory linkFailureDetectorFactory, final Metadata metadata,
                final List<ServerInterceptor> serverInterceptors, final List<ClientInterceptor> clientInterceptors)
                                                                             throws IOException, InterruptedException {
         UUID currentIdentifier = UUID.randomUUID();
@@ -291,8 +291,8 @@ public final class Cluster {
                         MembershipService.Builder msBuilder =
                                 new MembershipService.Builder(listenAddress, watermarkBuffer, membershipViewFinal,
                                                               protocolExecutor);
-                        if (linkFailureDetector != null) {
-                            msBuilder = msBuilder.setLinkFailureDetector(linkFailureDetector);
+                        if (linkFailureDetectorFactory != null) {
+                            msBuilder = msBuilder.setLinkFailureDetector(linkFailureDetectorFactory);
                         }
                         final MembershipService membershipService = msBuilder.setRpcClient(joinerClient)
                                                                              .setMetadata(allMetadata)
@@ -320,12 +320,12 @@ public final class Cluster {
      * Start a cluster without joining. Required to bootstrap a seed node.
      *
      * @param listenAddress Address to bind to after successful bootstrap
-     * @param linkFailureDetector a list of checks to perform before a monitor processes a join phase two message
+     * @param linkFailureDetectorFactory a list of checks to perform before a monitor processes a join phase two message
      * @throws IOException Thrown if we cannot successfully start a server
      */
     @VisibleForTesting
     static Cluster startCluster(final HostAndPort listenAddress,
-                                @Nullable final ILinkFailureDetector linkFailureDetector,
+                                @Nullable final ILinkFailureDetectorFactory linkFailureDetectorFactory,
                                 final Metadata metadata,
                                 final List<ServerInterceptor> interceptors) throws IOException {
         Objects.requireNonNull(listenAddress);
@@ -344,8 +344,8 @@ public final class Cluster {
         MembershipService.Builder builder = new MembershipService.Builder(listenAddress, watermarkBuffer,
                                                                           membershipView, protocolExecutor);
         // If linkFailureDetector == null, the system defaults to using the PingPongFailureDetector
-        if (linkFailureDetector != null) {
-            builder = builder.setLinkFailureDetector(linkFailureDetector);
+        if (linkFailureDetectorFactory != null) {
+            builder = builder.setLinkFailureDetector(linkFailureDetectorFactory);
         }
         final MembershipService membershipService = metadata.getMetadataCount() > 0
                             ? builder.setMetadata(Collections.singletonMap(listenAddress.toString(), metadata)).build()

@@ -1,48 +1,52 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.vrg.rapid.monitoring.ILinkFailureDetector;
-import com.vrg.rapid.pb.ProbeMessage;
-import com.vrg.rapid.pb.ProbeResponse;
-import io.grpc.stub.StreamObserver;
+import com.google.common.util.concurrent.SettableFuture;
+import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 
-import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
  * Used for testing.
  */
-class StaticFailureDetector implements ILinkFailureDetector {
-    private final Set<HostAndPort> failedNodes;
+class StaticFailureDetector implements Runnable {
+    private final Set<HostAndPort> blackList;
+    private final Map<HostAndPort, SettableFuture<Void>> perMonitoreeNotifier;
 
-    StaticFailureDetector(final Set<HostAndPort> blackList) {
-        this.failedNodes = blackList;
+    /**
+     * The factory passes the blacklist over by reference and modifies it to influence failure detections by
+     * the StaticFailureDetector instances.
+     */
+    private StaticFailureDetector(final Set<HostAndPort> blackList,
+                                  final Map<HostAndPort, SettableFuture<Void>> perMonitoreeNotifier) {
+        this.blackList = blackList;
+        this.perMonitoreeNotifier = perMonitoreeNotifier;
     }
 
     @Override
-    public ListenableFuture<Void> checkMonitoree(final HostAndPort monitoree) {
-        return Futures.immediateFuture(null);
+    public void run() {
+        this.perMonitoreeNotifier.forEach((monitoree, notifier) -> {
+            if (blackList.contains(monitoree)) {
+                perMonitoreeNotifier.get(monitoree).set(null);
+            }
+        });
     }
 
-    @Override
-    public void handleProbeMessage(final ProbeMessage probeMessage,
-                                   final StreamObserver<ProbeResponse> probeResponseStreamObserver) {
-        throw new UnsupportedOperationException();
-    }
+    static class Factory implements ILinkFailureDetectorFactory {
+        private final Set<HostAndPort> blackList;
 
-    @Override
-    public boolean hasFailed(final HostAndPort monitorees) {
-        return failedNodes.contains(monitorees);
-    }
+        Factory(final Set<HostAndPort> blackList) {
+            this.blackList = blackList;
+        }
 
-    @Override
-    public void onMembershipChange(final List<HostAndPort> monitorees) {
+        @Override
+        public Runnable getInstance(final Map<HostAndPort, SettableFuture<Void>> perMonitoreeNotifier) {
+            return new StaticFailureDetector(blackList, perMonitoreeNotifier);
+        }
 
-    }
-
-    public void addFailedNodes(final Set<HostAndPort> nodes) {
-        failedNodes.addAll(nodes);
+        public void addFailedNodes(final Set<HostAndPort> nodes) {
+            blackList.addAll(nodes);
+        }
     }
 }
