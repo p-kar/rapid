@@ -62,10 +62,10 @@ public class PingPongFailureDetector implements Runnable {
         this.probeCallbacks = new ConcurrentHashMap<>(monitoreeNotifiers.size());
         this.rpcClient = rpcClient;
         final ProbeMessage.Builder builder = ProbeMessage.newBuilder();
-        for (final HostAndPort node: monitoreeNotifiers.keySet()) {
-            failureCount.put(node, new AtomicInteger(0));
-            messageHashMap.putIfAbsent(node, builder.setSender(address.toString()).build());
-            probeCallbacks.put(node, new ProbeCallback(node, monitoreeNotifiers.get(node)));
+        for (final Map.Entry<HostAndPort, SettableFuture<Void>> entry: monitoreeNotifiers.entrySet()) {
+            failureCount.put(entry.getKey(), new AtomicInteger(0));
+            messageHashMap.putIfAbsent(entry.getKey(), builder.setSender(address.toString()).build());
+            probeCallbacks.put(entry.getKey(), new ProbeCallback(entry.getKey(), entry.getValue()));
         }
         this.monitoreeNotifiers = monitoreeNotifiers;
     }

@@ -160,7 +160,8 @@ public final class Cluster {
          * @throws IOException Thrown if we cannot successfully start a server
          */
         public Cluster start() throws IOException {
-            return startCluster(this.listenAddress, this.linkFailureDetectorFactory, this.metadata, this.serverInterceptors);
+            return startCluster(this.listenAddress, this.linkFailureDetectorFactory, this.metadata,
+                                this.serverInterceptors);
         }
     }
 
