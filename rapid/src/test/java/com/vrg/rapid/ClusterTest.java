@@ -276,8 +276,8 @@ public class ClusterTest {
     @Test
     public void twelveFailuresOutOfFiftyNodes() throws IOException, InterruptedException {
         LinkFailureDetectorRunner.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100;
-        LinkFailureDetectorRunner.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
-        RpcClient.Conf.RPC_PROBE_TIMEOUT = 100;
+        LinkFailureDetectorRunner.FAILURE_DETECTOR_INTERVAL_IN_MS = 100;
+        RpcClient.Conf.RPC_PROBE_TIMEOUT = 50;
         final int numNodes = 50;
         final int failingNodes = 12;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
@@ -319,8 +319,8 @@ public class ClusterTest {
     @Test
     public void injectAsymmetricDrops() throws IOException, InterruptedException {
         LinkFailureDetectorRunner.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100;
-        LinkFailureDetectorRunner.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
-        RpcClient.Conf.RPC_PROBE_TIMEOUT = 500;
+        LinkFailureDetectorRunner.FAILURE_DETECTOR_INTERVAL_IN_MS = 100;
+        RpcClient.Conf.RPC_PROBE_TIMEOUT = 50;
         final int numNodes = 50;
         final int numFailingNodes = 10;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);

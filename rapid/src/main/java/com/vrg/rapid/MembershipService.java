@@ -94,6 +94,7 @@ final class MembershipService {
     private final ScheduledExecutorService backgroundTasksExecutor;
     private final ScheduledFuture<?> linkUpdateBatcherJob;
     private final ExecutorService protocolExecutor;
+    @Nullable private ScheduledFuture<?> linkUpdateAnnouncerJob;
 
     // Fields used by consensus protocol
     private final Map<List<String>, AtomicInteger> votesPerProposal = new HashMap<>();
@@ -422,6 +423,9 @@ final class MembershipService {
         votesPerProposal.clear();
         votesReceived.clear();
         announcedProposal = false;
+        if (linkUpdateAnnouncerJob != null) {
+            linkUpdateAnnouncerJob.cancel(true);
+        }
 
         broadcaster.setMembership(membershipView.getRing(0));
         // Inform LinkFailureDetector about membership change
@@ -520,8 +524,13 @@ final class MembershipService {
                         .setLinkDst(monitoree.toString())
                         .setLinkStatus(LinkStatus.DOWN)
                         .setConfigurationId(configurationId);
-                membershipView.getRingNumbers(myAddr, monitoree)
-                        .forEach(i -> enqueueLinkUpdateMessage(msgTemplate.setRingNumber(i).build()));
+                final List<LinkUpdateMessage> msgs = membershipView.getRingNumbers(myAddr, monitoree)
+                        .stream()
+                        .map(i -> msgTemplate.setRingNumber(i).build())
+                        .collect(Collectors.toList());
+
+                linkUpdateAnnouncerJob = backgroundTasksExecutor.scheduleAtFixedRate(new FailureRepeatedAnnouncer(msgs),
+                                0, 5000, TimeUnit.MILLISECONDS);
             }
         );
     }
@@ -625,6 +634,19 @@ final class MembershipService {
             finally {
                 batchSchedulerLock.unlock();
             }
+        }
+    }
+
+    private class FailureRepeatedAnnouncer implements Runnable {
+        final List<LinkUpdateMessage> linkUpdateMessages;
+
+        FailureRepeatedAnnouncer(final List<LinkUpdateMessage> msgs) {
+            this.linkUpdateMessages = msgs;
+        }
+
+        @Override
+        public void run() {
+            linkUpdateMessages.forEach(MembershipService.this::enqueueLinkUpdateMessage);
         }
     }
 
