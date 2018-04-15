@@ -4,6 +4,7 @@ import com.google.common.net.HostAndPort;
 import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.TextFormat;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
+import com.vrg.rapid.pb.GossipUpdateMessage;
 import com.vrg.rapid.pb.ConsensusResponse;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.FastRoundPhase2bMessage;
@@ -144,6 +145,10 @@ final class Utils {
 
     static RapidRequest toRapidRequest(final BatchedLinkUpdateMessage msg) {
         return RapidRequest.newBuilder().setBatchedLinkUpdateMessage(msg).build();
+    }
+
+    static RapidRequest toRapidRequest(final GossipUpdateMessage msg) {
+        return RapidRequest.newBuilder().setGossipUpdateMessage(msg).build();
     }
 
     static RapidRequest toRapidRequest(final ProbeMessage msg) {

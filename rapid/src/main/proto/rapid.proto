@@ -30,6 +30,7 @@ message RapidRequest
         Phase1bMessage phase1bMessage = 7;
         Phase2aMessage phase2aMessage = 8;
         Phase2bMessage phase2bMessage = 9;
+        GossipUpdateMessage gossipUpdateMessage = 10;
    }
 }
 
@@ -114,6 +115,12 @@ enum LinkStatus {
 
 message Response
 {
+}
+
+// ******* Gossip broadcaster message *******
+message GossipUpdateMessage
+{
+    repeated RapidRequest messages = 1;
 }
 
 

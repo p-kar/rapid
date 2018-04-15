@@ -1,0 +1,12 @@
+.DS_Store
+.idea/
+build-common/build-common.iml
+build-common/target/
+integration-tests/integration-tests.iml
+integration-tests/target/
+rapid-examples/rapid-examples.iml
+rapid-examples/target/
+rapid-project.iml
+rapid/rapid.iml
+rapid/target/
+target/

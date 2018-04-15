@@ -49,6 +49,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
 
 /**
  * The public API for Rapid. Users create Cluster objects using either Cluster.start()
@@ -362,16 +363,22 @@ public final class Cluster {
              * Phase one complete. Now send a phase two message to all our monitors, and if there is a valid
              * response, construct a Cluster object based on it.
              */
-            final Optional<JoinResponse> response = sendJoinPhase2Messages(joinPhaseOneResult,
+//            System.out.println("JOINPHASEONERESULT: " + joinPhaseOneResult);
+            final List<RapidResponse> response = sendJoinPhase2Messages(joinPhaseOneResult,
                     configurationToJoin, currentIdentifier)
+                    .stream()
+                    .collect(Collectors.toList());
+//            System.out.println("response 1: " + response);
+            final Optional<JoinResponse> resp = response
                     .stream()
                     .filter(Objects::nonNull)
                     .map(RapidResponse::getJoinResponse)
                     .filter(r -> r.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN)
                     .filter(r -> r.getConfigurationId() != configurationToJoin)
                     .findFirst();
-            if (response.isPresent()) {
-                return createClusterFromJoinResponse(response.get());
+//            System.out.println("response 2:" + resp);
+            if (resp.isPresent()) {
+                return createClusterFromJoinResponse(resp.get());
             }
             throw new JoinPhaseTwoException();
         }
@@ -402,10 +409,12 @@ public final class Cluster {
                         .setMetadata(metadata)
                         .setConfigurationId(configurationToJoin)
                         .addAllRingNumber(entry.getValue()).build();
+//                System.out.println("join msg: " + msg);
                 final RapidRequest request = Utils.toRapidRequest(msg);
                 LOG.info("{} is sending a join-p2 to {} for config {}",
                         listenAddress, entry.getKey(), configurationToJoin);
                 final ListenableFuture<RapidResponse> call = messagingClient.sendMessage(entry.getKey(), request);
+//                System.out.println("response: " + call);
                 responseFutures.add(call);
             }
             return Futures.successfulAsList(responseFutures).get();
