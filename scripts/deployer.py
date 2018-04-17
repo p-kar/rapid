@@ -3,7 +3,7 @@ import socket
 import sys
 import paramiko
 import time
-from send_test import RetrieveClosedPorts
+from send_script import RetrieveClosedPorts
 
 class RapidDeployer(object):
 
@@ -12,12 +12,12 @@ class RapidDeployer(object):
     self.seedPorts = []
     self.iterator = None
 
-  def find_open_ports(self, IP_Addr):
-    for port in range(1025, 32000):
-      sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-      result = sock.connect_ex((IP_Addr, port))
-      if result != 0:  
-        yield port        
+  # def find_open_ports(self, IP_Addr):
+  #   for port in range(1025, 32000):
+  #     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+  #     result = sock.connect_ex((IP_Addr, port))
+  #     if result != 0:  
+  #       yield port        
 
   # print next(find_open_ports('localhost'))
 
