@@ -115,7 +115,7 @@ final class GossipBroadcaster implements IBroadcaster {
         public RapidRequest msg;
 
         public GossipMessageStruct(final RapidRequest m, final List<Endpoint> recipients) {
-            msgId = m.hashCode();
+            msgId = m.toString().hashCode();
             numRetransmitsLeft =  (int) Math.ceil(retransmitMult * Math.log((float) recipients.size() + 1));
             msg = m;
         }
@@ -186,7 +186,7 @@ final class GossipBroadcaster implements IBroadcaster {
     public synchronized List<ListenableFuture<RapidResponse>> broadcast(final RapidRequest msg) {
         broadcastLock.lock();
         try {
-            final int hashCode = msg.hashCode();
+            final int hashCode = msg.toString().hashCode();
             for (final GossipMessageStruct msginfo: doneQueue) {
                 if (hashCode == msginfo.msgId) {
                     return null;
