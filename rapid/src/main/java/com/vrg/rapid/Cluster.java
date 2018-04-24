@@ -49,7 +49,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.function.BiConsumer;
-import java.util.stream.Collectors;
 
 /**
  * The public API for Rapid. Users create Cluster objects using either Cluster.start()
@@ -364,12 +363,8 @@ public final class Cluster {
              * response, construct a Cluster object based on it.
              */
 //            System.out.println("JOINPHASEONERESULT: " + joinPhaseOneResult);
-            final List<RapidResponse> response = sendJoinPhase2Messages(joinPhaseOneResult,
+            final Optional<JoinResponse> response = sendJoinPhase2Messages(joinPhaseOneResult,
                     configurationToJoin, currentIdentifier)
-                    .stream()
-                    .collect(Collectors.toList());
-//            System.out.println("response 1: " + response);
-            final Optional<JoinResponse> resp = response
                     .stream()
                     .filter(Objects::nonNull)
                     .map(RapidResponse::getJoinResponse)
@@ -377,8 +372,8 @@ public final class Cluster {
                     .filter(r -> r.getConfigurationId() != configurationToJoin)
                     .findFirst();
 //            System.out.println("response 2:" + resp);
-            if (resp.isPresent()) {
-                return createClusterFromJoinResponse(resp.get());
+            if (response.isPresent()) {
+                return createClusterFromJoinResponse(response.get());
             }
             throw new JoinPhaseTwoException();
         }

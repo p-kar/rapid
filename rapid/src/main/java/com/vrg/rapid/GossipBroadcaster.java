@@ -36,7 +36,7 @@ final class GossipBroadcaster implements IBroadcaster {
     // This allows the retransmits to scale properly with cluster size. The
     // higher the multiplier, the more likely a failed broadcast is to converge
     // at the expense of increased bandwidth.
-    private static int retransmitMult = 2;
+    private static int retransmitMult = 4;
     // If the cluster size is too small then this sets the minimum
     // gossip fanout.
     // private static int minRetransmitNum = 2;
@@ -90,8 +90,8 @@ final class GossipBroadcaster implements IBroadcaster {
     //
     // GossipToTheDeadTime is the interval after which a node has died that
     // we will still try to gossip to it. This gives it a chance to refute.
-    private static int gossipInterval = 5;
-    private static int gossipNodes = 2;
+    private static int gossipInterval = 200;
+    private static int gossipNodes = 3;
     // GossipToTheDeadTime time.Duration
 
     // GossipVerifyIncoming controls whether to enforce encryption for incoming
@@ -105,9 +105,11 @@ final class GossipBroadcaster implements IBroadcaster {
     // private static boolean gossipVerifyOutgoing;
 
 
-    private static final Logger LOG = LoggerFactory.getLogger(UnicastToAllBroadcaster.class);
+    private static final Logger LOG = LoggerFactory.getLogger(GossipBroadcaster.class);
     private final IMessagingClient messagingClient;
     private final Lock broadcastLock = new ReentrantLock();
+    private final Thread gossipThread;
+    private boolean shutdown;
 
     private static class GossipMessageStruct {
         public int msgId;
@@ -116,8 +118,42 @@ final class GossipBroadcaster implements IBroadcaster {
 
         public GossipMessageStruct(final RapidRequest m, final List<Endpoint> recipients) {
             msgId = m.toString().hashCode();
-            numRetransmitsLeft =  (int) Math.ceil(retransmitMult * Math.log((float) recipients.size() + 1));
-            msg = m;
+            numRetransmitsLeft =  (int) Math.ceil(retransmitMult * Math.log10((float) recipients.size() + 1));
+            switch (m.getContentCase()) {
+                case PREJOINMESSAGE:
+                    msg = Utils.toRapidRequest(m.getPreJoinMessage());
+                    break;
+                case JOINMESSAGE:
+                    msg = Utils.toRapidRequest(m.getJoinMessage());
+                    break;
+                case BATCHEDLINKUPDATEMESSAGE:
+                    msg = Utils.toRapidRequest(m.getBatchedLinkUpdateMessage());
+                    break;
+                case GOSSIPUPDATEMESSAGE:
+                    msg = Utils.toRapidRequest(m.getGossipUpdateMessage());
+                    break;
+                case PROBEMESSAGE:
+                    msg = Utils.toRapidRequest(m.getProbeMessage());
+                    break;
+                case FASTROUNDPHASE2BMESSAGE:
+                    msg = Utils.toRapidRequest(m.getFastRoundPhase2BMessage());
+                    break;
+                case PHASE1AMESSAGE:
+                    msg = Utils.toRapidRequest(m.getPhase1AMessage());
+                    break;
+                case PHASE1BMESSAGE:
+                    msg = Utils.toRapidRequest(m.getPhase1BMessage());
+                    break;
+                case PHASE2AMESSAGE:
+                    msg = Utils.toRapidRequest(m.getPhase2AMessage());
+                    break;
+                case PHASE2BMESSAGE:
+                    msg = Utils.toRapidRequest(m.getPhase2BMessage());
+                    break;
+                case CONTENT_NOT_SET:
+                default:
+                    throw new IllegalArgumentException("Unidentified RapidRequest type " + m.getContentCase());
+            }
         }
     }
 
@@ -137,6 +173,9 @@ final class GossipBroadcaster implements IBroadcaster {
         @Override
         public void run() {
             while (true) {
+                if (shutdown) {
+                    break;
+                }
                 broadcastLock.lock();
                 try {
                     if (sendQueue.size() == 0) {
@@ -157,7 +196,7 @@ final class GossipBroadcaster implements IBroadcaster {
                     final GossipUpdateMessage gossipMsg = GossipUpdateMessage.newBuilder()
                             .addAllMessages(msgs)
                             .build();
-                    Collections.shuffle(recipients);
+                    Collections.shuffle(recipients, ThreadLocalRandom.current());
                     for (int i = 0; i < Math.min(gossipNodes, recipients.size()); ++i) {
                         messagingClient.sendMessageBestEffort(recipients.get(i), Utils.toRapidRequest(gossipMsg));
                     }
@@ -178,7 +217,19 @@ final class GossipBroadcaster implements IBroadcaster {
         this.messagingClient = messagingClient;
         this.sendQueue = new ArrayList<GossipMessageStruct>();
         this.doneQueue = new ArrayList<GossipMessageStruct>();
-        new Thread(new GossipBroadcastBackgroundService()).start();
+        this.shutdown = false;
+        this.gossipThread = new Thread(new GossipBroadcastBackgroundService());
+        this.gossipThread.start();
+    }
+
+    public void shutdown() {
+        this.shutdown = true;
+        try {
+            this.gossipThread.join();
+        }
+        catch (final InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
