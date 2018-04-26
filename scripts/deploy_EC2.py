@@ -6,17 +6,17 @@ import sys
 
 class DeployEC2(object):
   
-  def __init__(self, number, instanceType, keyName):
+  def __init__(self, number=0, instanceType='t2.micro', keyName='default'):
     self.number_of_instances = number
     self.instance_type = instanceType
     self.keyName = keyName
     self.client = boto3.client('ec2')
     self.spawned_list = []
 
-  # def _get_userdata(self):
-  #   user_data = """#!/bin/bash
-  #           """
-  #   return user_data
+  def _get_userdata(self):
+    user_data = """#!/bin/bash
+            """
+    return user_data
 
   def _get_security_groups(self):
 
@@ -26,9 +26,8 @@ class DeployEC2(object):
     security_groups.append(default_security_group_id)
     return security_groups
 
-  def spawn_instances(self):
-    
-    ami_id = 'ami-4e79ed36'
+  def spawn_instances(self, ami_id = 'ami-aa94fdd2'):
+
     # user_data = self._get_userdata()
     security_groups = self._get_security_groups()
 
@@ -41,64 +40,90 @@ class DeployEC2(object):
             Monitoring={'Enabled': False},
             # UserData=user_data,
             SecurityGroupIds=security_groups,
+            TagSpecifications=[
+              {
+                  'ResourceType': 'instance',
+                  'Tags': [
+                      {
+                          'Key': 'rapid',
+                          'Value': 'rapid'
+                      },
+                  ]
+              },
+            ],     
         )
     
     instance_ids = []
     for x in response['Instances']:
       instance_ids.append(x['InstanceId'])
     
-    time.sleep(30)
+    time.sleep(self.number_of_instances * 2)
+    
     return instance_ids
 
   def _get_instance_IPs(self, instance_ids):
     # Use describe_instances call
-    IPs = []
+    publicIPs = []
+    privateIPs = []
+    
     response = self.client.describe_instances(
                 InstanceIds=instance_ids,
+                Filters=[
+                    {
+                        'Name': 'tag-key',
+                        'Values': [
+                            'rapid',
+                        ]
+                    },
+                ],
               )
     for x in response['Reservations']:
       # print x['Instances']
       for y in x['Instances']:
         
         if 'PublicIpAddress' in y.keys():
-          IPs.append(y['PublicIpAddress'])
-          self.spawned_list.append(y['PublicIpAddress'])  
+          publicIPs.append(y['PublicIpAddress'])
+          privateIPs.append(y['PrivateIpAddress'])
+          
 
-    return IPs
+    return publicIPs, privateIPs
 
-  def send_Files(self, instance_ids, username, key_filename):
-    
-    IPs = self._get_instance_IPs(instance_ids)
+  def _get_instance_IDs(self):
+    instance_ids = []
 
-    for Ip in IPs:
-      if Ip in self.spawned_list:
-        continue
-      ssh = paramiko.SSHClient()
-      ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-      ssh.connect(hostname=Ip, username=username, key_filename=key_filename)
+    response = self.client.describe_instances(
+                InstanceIds=instance_ids,
+                Filters=[
+                    {
+                        'Name': 'tag-key',
+                        'Values': [
+                            'rapid',
+                        ]
+                    },
+                ],
+              )
 
-      ftp_client=ssh.open_sftp()
-      ftp_client.put('/home/kartik/Development/rapid_tests/EC2_Files/exec.sh','/home/ubuntu/exec.sh')
-      ftp_client.close()
+    for x in response['Reservations']:
+      # print x['Instances']
+      for y in x['Instances']:
+        
+        if 'PublicIpAddress' in y.keys():
+           instance_ids.append(y['InstanceId'])
 
-      stdin, stdout, stderr = ssh.exec_command("nohup bash /home/ubuntu/exec.sh &")
+    # print instance_ids
+    return instance_ids
 
-    print 'done'
-    time.sleep(100)
+  def terminate_instances(self, instance_ids):
+    response = self.client.terminate_instances(
+                  InstanceIds=instance_ids,
+              )
+    return response
 
-    for Ip in IPs:
-      if Ip in self.spawned_list:
-        continue
-      ssh = paramiko.SSHClient()
-      ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-      ssh.connect(hostname=Ip, username=username, key_filename=key_filename)
-
-      ftp_client=ssh.open_sftp()
-      ftp_client.put('/home/kartik/Development/rapid_tests/EC2_Files.zip','/home/ubuntu/EC2_Files.zip')
-      ftp_client.close()
-
-      stdin, stdout, stderr = ssh.exec_command('unzip /home/ubuntu/EC2_Files.zip')
-
+  def stop_instances(self, instance_ids):
+    response = self.client.stop_instances(
+                  InstanceIds=instance_ids,
+              )
+    return response
 
 # parser = argparse.ArgumentParser()
 
@@ -107,6 +132,6 @@ class DeployEC2(object):
 # parser.add_argument("-k", "--keyName", help='private key name', required=True, type=str)
 # opts = parser.parse_args()
 
-x = DeployEC2(2, 't2.micro', 'rapidkey')
-instance_ids = x.spawn_instances()
-x.send_Files(instance_ids, "ubuntu", "/home/kartik/Development/rapidkey.pem")
+# x = DeployEC2(2, 't2.micro', 'rapidkey')
+# instance_ids = x.spawn_instances()
+# x.send_Files(instance_ids, "ec2-user", "/home/kartik/Development/rapidkey.pem")
