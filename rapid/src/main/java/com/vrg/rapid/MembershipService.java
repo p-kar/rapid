@@ -133,7 +133,7 @@ public final class MembershipService {
         this.metadataManager.addMetadata(metadataMap);
         this.messagingClient = messagingClient;
         this.paxosBroadcaster = new UnicastToAllBroadcaster(messagingClient);
-        this.linkUpdateBroadcaster = new GossipBroadcaster(messagingClient);
+        this.linkUpdateBroadcaster = new GossipBroadcaster(messagingClient, sharedResources);
         this.subscriptions = subscriptions;
         this.fdFactory = linkFailureDetector;
 

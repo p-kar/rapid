@@ -17,7 +17,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -108,8 +110,7 @@ final class GossipBroadcaster implements IBroadcaster {
     private static final Logger LOG = LoggerFactory.getLogger(GossipBroadcaster.class);
     private final IMessagingClient messagingClient;
     private final Lock broadcastLock = new ReentrantLock();
-    private final Thread gossipThread;
-    private boolean shutdown;
+    private final ScheduledFuture<?> gossipJob;
 
     private static class GossipMessageStruct {
         public int msgId;
@@ -172,15 +173,9 @@ final class GossipBroadcaster implements IBroadcaster {
 
         @Override
         public void run() {
-            while (true) {
-                if (shutdown) {
-                    break;
-                }
-                broadcastLock.lock();
-                try {
-                    if (sendQueue.size() == 0) {
-                        continue;
-                    }
+            broadcastLock.lock();
+            try {
+                if (!sendQueue.isEmpty()) {
                     final List<RapidRequest> msgs = new ArrayList<RapidRequest>(sendQueue.size());
                     for (Iterator<GossipMessageStruct> it = sendQueue.listIterator(); it.hasNext(); ) {
                         final GossipMessageStruct msgInfo = it.next();
@@ -200,36 +195,24 @@ final class GossipBroadcaster implements IBroadcaster {
                     for (int i = 0; i < Math.min(gossipNodes, recipients.size()); ++i) {
                         messagingClient.sendMessageBestEffort(recipients.get(i), Utils.toRapidRequest(gossipMsg));
                     }
-
-                } finally {
-                    broadcastLock.unlock();
-                    try {
-                        Thread.sleep(gossipInterval);
-                    } catch (final InterruptedException e) {
-                        e.printStackTrace();
-                    }
                 }
+            } finally {
+                broadcastLock.unlock();
             }
         }
     }
 
-    GossipBroadcaster(final IMessagingClient messagingClient) {
+    GossipBroadcaster(final IMessagingClient messagingClient, final SharedResources sharedResources) {
         this.messagingClient = messagingClient;
         this.sendQueue = new ArrayList<GossipMessageStruct>();
         this.doneQueue = new ArrayList<GossipMessageStruct>();
-        this.shutdown = false;
-        this.gossipThread = new Thread(new GossipBroadcastBackgroundService());
-        this.gossipThread.start();
+        this.gossipJob = sharedResources.getScheduledTasksExecutor()
+                            .scheduleAtFixedRate(new GossipBroadcastBackgroundService(),
+                0, gossipInterval, TimeUnit.MILLISECONDS);
     }
 
     public void shutdown() {
-        this.shutdown = true;
-        try {
-            this.gossipThread.join();
-        }
-        catch (final InterruptedException e) {
-            e.printStackTrace();
-        }
+        this.gossipJob.cancel(true);
     }
 
     @Override
