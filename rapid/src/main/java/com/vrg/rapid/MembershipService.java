@@ -523,9 +523,10 @@ public final class MembershipService {
     void shutdown() {
         linkUpdateBatcherJob.cancel(true);
         failureDetectorJobs.forEach(k -> k.cancel(true));
-        messagingClient.shutdown();
         final GossipBroadcaster gb = (GossipBroadcaster)linkUpdateBroadcaster;
         gb.shutdown();
+        messagingClient.shutdown();
+
     }
 
     /**

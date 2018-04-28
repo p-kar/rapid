@@ -17,6 +17,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -92,7 +94,7 @@ final class GossipBroadcaster implements IBroadcaster {
     //
     // GossipToTheDeadTime is the interval after which a node has died that
     // we will still try to gossip to it. This gives it a chance to refute.
-    private static int gossipInterval = 200;
+    private static int gossipInterval = 100;
     private static int gossipNodes = 3;
     // GossipToTheDeadTime time.Duration
 
@@ -113,12 +115,12 @@ final class GossipBroadcaster implements IBroadcaster {
     private final ScheduledFuture<?> gossipJob;
 
     private static class GossipMessageStruct {
-        public int msgId;
+//        public int msgId;
         public int numRetransmitsLeft;
         public RapidRequest msg;
 
         public GossipMessageStruct(final RapidRequest m, final List<Endpoint> recipients) {
-            msgId = m.toString().hashCode();
+//            msgId = m.toString().hashCode();
             numRetransmitsLeft =  (int) Math.ceil(retransmitMult * Math.log10((float) recipients.size() + 1));
             switch (m.getContentCase()) {
                 case PREJOINMESSAGE:
@@ -159,9 +161,9 @@ final class GossipBroadcaster implements IBroadcaster {
     }
 
     @GuardedBy("broadcastLock")
-    private List<GossipMessageStruct> sendQueue;
+    private Map<Integer, GossipMessageStruct> sendQueue;
     @GuardedBy("broadcastLock")
-    private List<GossipMessageStruct> doneQueue;
+    private Map<Integer, GossipMessageStruct> doneQueue;
     @GuardedBy("broadcastLock")
     private List<Endpoint> recipients = Collections.emptyList();
 
@@ -176,18 +178,19 @@ final class GossipBroadcaster implements IBroadcaster {
             broadcastLock.lock();
             try {
                 if (!sendQueue.isEmpty()) {
-                    final List<RapidRequest> msgs = new ArrayList<RapidRequest>(sendQueue.size());
-                    for (Iterator<GossipMessageStruct> it = sendQueue.listIterator(); it.hasNext(); ) {
-                        final GossipMessageStruct msgInfo = it.next();
-                        if (msgInfo.numRetransmitsLeft == 0) {
-                            doneQueue.add(msgInfo);
+                    final List<RapidRequest> msgs = new ArrayList<>(sendQueue.size());
+                    final Iterator<Map.Entry<Integer, GossipMessageStruct>> it = sendQueue.entrySet().iterator();
+                    while (it.hasNext()) {
+                        final Map.Entry<Integer, GossipMessageStruct> pair = it.next();
+                        if (pair.getValue().numRetransmitsLeft == 0) {
+                            doneQueue.put(pair.getKey(), pair.getValue());
                             it.remove();
                         }
                     }
-                    for (int i = 0; i < sendQueue.size(); ++i) {
-                        msgs.add(sendQueue.get(i).msg);
-                        sendQueue.get(i).numRetransmitsLeft--;
-                    }
+                    sendQueue.forEach((hash, gossipMsgStruct) -> {
+                        msgs.add(gossipMsgStruct.msg);
+                        gossipMsgStruct.numRetransmitsLeft--;
+                    });
                     final GossipUpdateMessage gossipMsg = GossipUpdateMessage.newBuilder()
                             .addAllMessages(msgs)
                             .build();
@@ -204,8 +207,8 @@ final class GossipBroadcaster implements IBroadcaster {
 
     GossipBroadcaster(final IMessagingClient messagingClient, final SharedResources sharedResources) {
         this.messagingClient = messagingClient;
-        this.sendQueue = new ArrayList<GossipMessageStruct>();
-        this.doneQueue = new ArrayList<GossipMessageStruct>();
+        this.sendQueue = new HashMap<>();
+        this.doneQueue = new HashMap<>();
         this.gossipJob = sharedResources.getScheduledTasksExecutor()
                             .scheduleAtFixedRate(new GossipBroadcastBackgroundService(),
                 0, gossipInterval, TimeUnit.MILLISECONDS);
@@ -221,17 +224,13 @@ final class GossipBroadcaster implements IBroadcaster {
         broadcastLock.lock();
         try {
             final int hashCode = msg.toString().hashCode();
-            for (final GossipMessageStruct msginfo: doneQueue) {
-                if (hashCode == msginfo.msgId) {
-                    return null;
-                }
+            if (doneQueue.containsKey(hashCode)) {
+                return null;
             }
-            for (final GossipMessageStruct msginfo: sendQueue) {
-                if (hashCode == msginfo.msgId) {
-                    return null;
-                }
+            if (sendQueue.containsKey(hashCode)) {
+                return null;
             }
-            sendQueue.add(new GossipMessageStruct(msg, recipients));
+            sendQueue.put(hashCode, new GossipMessageStruct(msg, recipients));
         }
         finally {
             broadcastLock.unlock();
