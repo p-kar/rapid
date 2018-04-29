@@ -21,6 +21,7 @@ import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.GossipUpdateMessage;
+import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
@@ -77,7 +78,7 @@ public final class MembershipService {
     private final WatermarkBuffer watermarkBuffer;
     private final Endpoint myAddr;
     private final IBroadcaster paxosBroadcaster;
-    private final IBroadcaster linkUpdateBroadcaster;
+    private IBroadcaster linkUpdateBroadcaster;
     private final Map<Endpoint, LinkedBlockingDeque<SettableFuture<RapidResponse>>> joinersToRespondTo =
             new HashMap<>();
     private final Map<Endpoint, NodeId> joinerUuid = new HashMap<>();
@@ -133,7 +134,7 @@ public final class MembershipService {
         this.metadataManager.addMetadata(metadataMap);
         this.messagingClient = messagingClient;
         this.paxosBroadcaster = new UnicastToAllBroadcaster(messagingClient);
-        this.linkUpdateBroadcaster = new GossipBroadcaster(messagingClient, sharedResources);
+        this.linkUpdateBroadcaster = new GossipBroadcaster(messagingClient, myAddr);
         this.subscriptions = subscriptions;
         this.fdFactory = linkFailureDetector;
 
@@ -347,11 +348,26 @@ public final class MembershipService {
         Objects.requireNonNull(gossipMsg);
         final SettableFuture<RapidResponse> future = SettableFuture.create();
         final List<RapidRequest> msgs = gossipMsg.getMessagesList();
+        final List<Integer> hashes = new ArrayList<>(msgs.size());
+        final List<Boolean> knownMsgs = new ArrayList<>(msgs.size());
         for (final RapidRequest m: msgs) {
+            final int msgHash = m.toString().hashCode();
+            hashes.add(msgHash);
+            if (((GossipBroadcaster)linkUpdateBroadcaster).containsMessage(msgHash)) {
+                knownMsgs.add(true);
+            }
+            else {
+                knownMsgs.add(false);
+            }
+            knownMsgs.add(false);
             linkUpdateBroadcaster.broadcast(m);
             final ListenableFuture<RapidResponse> f = handleMessage(m);
         }
-        future.set(null);
+        assert hashes.size() == knownMsgs.size();
+        future.set(Utils.toRapidResponse(GossipResponse.newBuilder()
+                                                        .addAllKnownGossips(knownMsgs)
+                                                        .addAllGossipHashes(hashes)
+                                                        .build()));
         return future;
     }
 
@@ -523,8 +539,7 @@ public final class MembershipService {
     void shutdown() {
         linkUpdateBatcherJob.cancel(true);
         failureDetectorJobs.forEach(k -> k.cancel(true));
-        final GossipBroadcaster gb = (GossipBroadcaster)linkUpdateBroadcaster;
-        gb.shutdown();
+        ((GossipBroadcaster)linkUpdateBroadcaster).shutdown();
         messagingClient.shutdown();
 
     }

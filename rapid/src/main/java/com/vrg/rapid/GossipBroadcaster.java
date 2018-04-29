@@ -1,16 +1,20 @@
 package com.vrg.rapid;
 
-import com.vrg.rapid.pb.Endpoint;
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.GossipUpdateMessage;
+import com.vrg.rapid.pb.GossipResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import java.lang.Math;
 import java.util.ArrayList;
@@ -19,9 +23,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -55,24 +57,6 @@ final class GossipBroadcaster implements IBroadcaster {
     // usage.
     // PushPullInterval time.Duration
 
-    // ProbeInterval and ProbeTimeout are used to configure probing
-    // behavior for memberlist.
-    //
-    // ProbeInterval is the interval between random node probes. Setting
-    // this lower (more frequent) will cause the memberlist cluster to detect
-    // failed nodes more quickly at the expense of increased bandwidth usage.
-    //
-    // ProbeTimeout is the timeout to wait for an ack from a probed node
-    // before assuming it is unhealthy. This should be set to 99-percentile
-    // of RTT (round-trip time) on your network.
-    // ProbeInterval time.Duration
-    // ProbeTimeout  time.Duration
-
-    // DisableTcpPings will turn off the fallback TCP pings that are attempted
-    // if the direct UDP ping fails. These get pipelined along with the
-    // indirect UDP pings.
-    // private static boolean DisableTcpPings;
-
     // AwarenessMaxMultiplier will increase the probe interval if the node
     // becomes aware that it might be degraded and not meeting the soft real
     // time requirements to reliably probe other nodes.
@@ -98,29 +82,19 @@ final class GossipBroadcaster implements IBroadcaster {
     private static int gossipNodes = 3;
     // GossipToTheDeadTime time.Duration
 
-    // GossipVerifyIncoming controls whether to enforce encryption for incoming
-    // gossip. It is used for upshifting from unencrypted to encrypted gossip on
-    // a running cluster.
-    // private static boolean gossipVerifyIncoming;
-
-    // GossipVerifyOutgoing controls whether to enforce encryption for outgoing
-    // gossip. It is used for upshifting from unencrypted to encrypted gossip on
-    // a running cluster.
-    // private static boolean gossipVerifyOutgoing;
-
 
     private static final Logger LOG = LoggerFactory.getLogger(GossipBroadcaster.class);
+    private final Endpoint myAddr;
     private final IMessagingClient messagingClient;
     private final Lock broadcastLock = new ReentrantLock();
-    private final ScheduledFuture<?> gossipJob;
+    private final Thread gossipThread;
+    private boolean shutdown;
 
     private static class GossipMessageStruct {
-//        public int msgId;
         public int numRetransmitsLeft;
         public RapidRequest msg;
 
         public GossipMessageStruct(final RapidRequest m, final List<Endpoint> recipients) {
-//            msgId = m.toString().hashCode();
             numRetransmitsLeft =  (int) Math.ceil(retransmitMult * Math.log10((float) recipients.size() + 1));
             switch (m.getContentCase()) {
                 case PREJOINMESSAGE:
@@ -175,47 +149,115 @@ final class GossipBroadcaster implements IBroadcaster {
 
         @Override
         public void run() {
-            broadcastLock.lock();
-            try {
-                if (!sendQueue.isEmpty()) {
-                    final List<RapidRequest> msgs = new ArrayList<>(sendQueue.size());
-                    final Iterator<Map.Entry<Integer, GossipMessageStruct>> it = sendQueue.entrySet().iterator();
-                    while (it.hasNext()) {
-                        final Map.Entry<Integer, GossipMessageStruct> pair = it.next();
-                        if (pair.getValue().numRetransmitsLeft == 0) {
-                            doneQueue.put(pair.getKey(), pair.getValue());
-                            it.remove();
+            while (true) {
+                if (shutdown) {
+                    break;
+                }
+                broadcastLock.lock();
+                try {
+                    if (!sendQueue.isEmpty()) {
+                        final List<RapidRequest> msgs = new ArrayList<>(sendQueue.size());
+                        final Iterator<Map.Entry<Integer, GossipMessageStruct>> it = sendQueue.entrySet().iterator();
+                        while (it.hasNext()) {
+                            final Map.Entry<Integer, GossipMessageStruct> pair = it.next();
+                            if (pair.getValue().numRetransmitsLeft == 0) {
+                                doneQueue.put(pair.getKey(), pair.getValue());
+                                it.remove();
+                            }
+                        }
+                        sendQueue.forEach((hash, gossipMsgStruct) -> {
+                            msgs.add(gossipMsgStruct.msg);
+                            gossipMsgStruct.numRetransmitsLeft--;
+                        });
+                        final GossipUpdateMessage gossipMsg = GossipUpdateMessage.newBuilder()
+                                .addAllMessages(msgs)
+                                .build();
+                        final RapidRequest msgToSend = Utils.toRapidRequest(gossipMsg);
+                        Collections.shuffle(recipients, ThreadLocalRandom.current());
+                        for (int i = 0; i < Math.min(gossipNodes, recipients.size()); ++i) {
+                            Futures.addCallback(messagingClient.sendMessageBestEffort(recipients.get(i), msgToSend),
+                                new GossipCallback());
                         }
                     }
-                    sendQueue.forEach((hash, gossipMsgStruct) -> {
-                        msgs.add(gossipMsgStruct.msg);
-                        gossipMsgStruct.numRetransmitsLeft--;
-                    });
-                    final GossipUpdateMessage gossipMsg = GossipUpdateMessage.newBuilder()
-                            .addAllMessages(msgs)
-                            .build();
-                    Collections.shuffle(recipients, ThreadLocalRandom.current());
-                    for (int i = 0; i < Math.min(gossipNodes, recipients.size()); ++i) {
-                        messagingClient.sendMessageBestEffort(recipients.get(i), Utils.toRapidRequest(gossipMsg));
+                } finally {
+                    broadcastLock.unlock();
+                    try {
+                        Thread.sleep(gossipInterval);
+                    } catch (final InterruptedException e) {
+                        e.printStackTrace();
                     }
                 }
-            } finally {
-                broadcastLock.unlock();
             }
         }
     }
 
-    GossipBroadcaster(final IMessagingClient messagingClient, final SharedResources sharedResources) {
+    private class GossipCallback implements FutureCallback<RapidResponse> {
+
+        GossipCallback() {
+        }
+
+        @Override
+        public void onSuccess(@Nullable final RapidResponse response) {
+            if (response == null) {
+                LOG.trace("Received null gossip response at {}", myAddr);
+                return;
+            }
+            final GossipResponse gossipResponse = response.getGossipResponse();
+            for (int i = 0; i < gossipResponse.getKnownGossipsList().size(); i++) {
+                if (gossipResponse.getKnownGossips(i)) {
+                    final int msgHash = gossipResponse.getGossipHashes(i);
+                    if (ThreadLocalRandom.current().nextInt(0, 3) == 0) {
+                        broadcastLock.lock();
+                        try {
+                            if (sendQueue.containsKey(msgHash)) {
+                                doneQueue.put(msgHash, sendQueue.get(msgHash));
+                                sendQueue.remove(msgHash);
+                            }
+                        }
+                        finally {
+                            broadcastLock.unlock();
+                        }
+                    }
+                }
+            }
+        }
+
+        @Override
+        public void onFailure(final Throwable throwable) {
+            LOG.trace("Failed gossip message at {} : {}", myAddr, throwable.getLocalizedMessage());
+        }
+
+
+    }
+
+    GossipBroadcaster(final IMessagingClient messagingClient, final Endpoint myAddr) {
         this.messagingClient = messagingClient;
+        this.myAddr = myAddr;
         this.sendQueue = new HashMap<>();
         this.doneQueue = new HashMap<>();
-        this.gossipJob = sharedResources.getScheduledTasksExecutor()
-                            .scheduleAtFixedRate(new GossipBroadcastBackgroundService(),
-                0, gossipInterval, TimeUnit.MILLISECONDS);
+        this.shutdown = false;
+        this.gossipThread = new Thread(new GossipBroadcastBackgroundService());
+        this.gossipThread.start();
     }
 
     public void shutdown() {
-        this.gossipJob.cancel(true);
+        this.shutdown = true;
+        try {
+            this.gossipThread.join();
+        }
+        catch (final InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public boolean containsMessage(final int msgHash) {
+        broadcastLock.lock();
+        try {
+            return (sendQueue.containsKey(msgHash) || doneQueue.containsKey(msgHash));
+        }
+        finally {
+            broadcastLock.unlock();
+        }
     }
 
     @Override
@@ -224,10 +266,7 @@ final class GossipBroadcaster implements IBroadcaster {
         broadcastLock.lock();
         try {
             final int hashCode = msg.toString().hashCode();
-            if (doneQueue.containsKey(hashCode)) {
-                return null;
-            }
-            if (sendQueue.containsKey(hashCode)) {
+            if (doneQueue.containsKey(hashCode) || sendQueue.containsKey(hashCode)) {
                 return null;
             }
             sendQueue.put(hashCode, new GossipMessageStruct(msg, recipients));

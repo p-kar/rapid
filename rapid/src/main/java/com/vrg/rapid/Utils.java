@@ -5,6 +5,7 @@ import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.TextFormat;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.GossipUpdateMessage;
+import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.ConsensusResponse;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.FastRoundPhase2bMessage;
@@ -185,6 +186,10 @@ final class Utils {
 
     static RapidResponse toRapidResponse(final ProbeResponse msg) {
         return RapidResponse.newBuilder().setProbeResponse(msg).build();
+    }
+
+    static RapidResponse toRapidResponse(final GossipResponse msg) {
+        return RapidResponse.newBuilder().setGossipResponse(msg).build();
     }
 
 

@@ -41,6 +41,7 @@ message RapidResponse
         Response response = 2;
         ConsensusResponse consensusResponse = 3;
         ProbeResponse probeResponse = 4;
+        GossipResponse gossipResponse = 5;
    }
 }
 
@@ -121,6 +122,12 @@ message Response
 message GossipUpdateMessage
 {
     repeated RapidRequest messages = 1;
+}
+
+message GossipResponse
+{
+    repeated int32 gossipHashes = 1;
+    repeated bool knownGossips = 2;
 }
 
 
