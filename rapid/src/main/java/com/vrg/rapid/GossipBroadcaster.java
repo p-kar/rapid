@@ -42,7 +42,7 @@ final class GossipBroadcaster implements IBroadcaster {
     // This allows the retransmits to scale properly with cluster size. The
     // higher the multiplier, the more likely a failed broadcast is to converge
     // at the expense of increased bandwidth.
-    private static int retransmitMult = 4;
+    private static int retransmitMult = 3;
     // If the cluster size is too small then this sets the minimum
     // gossip fanout.
     // private static int minRetransmitNum = 2;
@@ -149,10 +149,7 @@ final class GossipBroadcaster implements IBroadcaster {
 
         @Override
         public void run() {
-            while (true) {
-                if (shutdown) {
-                    break;
-                }
+            while (!shutdown) {
                 broadcastLock.lock();
                 try {
                     if (!sendQueue.isEmpty()) {
@@ -176,7 +173,7 @@ final class GossipBroadcaster implements IBroadcaster {
                         Collections.shuffle(recipients, ThreadLocalRandom.current());
                         for (int i = 0; i < Math.min(gossipNodes, recipients.size()); ++i) {
                             Futures.addCallback(messagingClient.sendMessageBestEffort(recipients.get(i), msgToSend),
-                                new GossipCallback());
+                                new GossipCallback(recipients.get(i)));
                         }
                     }
                 } finally {
@@ -192,14 +189,19 @@ final class GossipBroadcaster implements IBroadcaster {
     }
 
     private class GossipCallback implements FutureCallback<RapidResponse> {
+        private final Endpoint receiver;
 
-        GossipCallback() {
+        GossipCallback(final Endpoint receiver) {
+            this.receiver = receiver;
         }
 
         @Override
         public void onSuccess(@Nullable final RapidResponse response) {
             if (response == null) {
                 LOG.trace("Received null gossip response at {}", myAddr);
+                return;
+            }
+            if (this.receiver.equals(myAddr)) {
                 return;
             }
             final GossipResponse gossipResponse = response.getGossipResponse();
