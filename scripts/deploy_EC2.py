@@ -125,6 +125,12 @@ class DeployEC2(object):
               )
     return response
 
+  def start_instances(self, instance_ids):
+    response = self.client.start_instances(
+                  InstanceIds=instance_ids,
+              )
+    return response
+
 # parser = argparse.ArgumentParser()
 
 # parser.add_argument("-n", "--number", help='number of EC2 instances', required=True, type=int)

@@ -3,17 +3,19 @@ import paramiko
 import time
 import random
 import os
+import argparse
 from threading import Thread
 from datetime import datetime
 from deploy_EC2 import DeployEC2
 
 class RapidDeployer(object):
 
-  def __init__(self):
+  def __init__(self, opt):
     self.seedIPAddr = []
     self.seedPorts = []
     self.joinIPAddr = []
     self.iterators = {}
+    self.opt = opt
 
   def find_open_ports(self, IP_Addr):
     for port in range(9000, 32000):
@@ -62,26 +64,37 @@ class RapidDeployer(object):
     for _ in xrange(no_of_processes):
       ports.append(port_getter.next())
     
-    print "Ports :", ports
-    list_threads = []
+    # print "Ports :", ports
+    # list_threads = []
+    command = ""
 
     for seedPort in ports:
     #   # print seedPort
       self.seedPorts.append(seedPort)
-      '''
-      command = "nohup java -server -Xms50m -Xmx50m -jar ~/rapid-examples-1.0-SNAPSHOT-allinone.jar --listenAddress " + \
-                "\"" + str(listenAddress) + ":" + str(seedPort) + "\" --seedAddress " + "\"" + str(seedAddress) + ":" + str(seedPort) + "\" \
-                --cluster Rapid --role \"starter\" > ~/" + IP_Addr + "_" + str(seedPort) + ".log 2>~/" + IP_Addr + "_" + str(seedPort) + ".err &"
-      '''
-      command = "nohup java -server -Xms50m -Xmx50m -jar ~/rapid-lalith.jar --listenAddress " + \
-                "\"" + str(listenAddress) + ":" + str(seedPort) + "\" --seedAddress " + "\"" + str(seedAddress) + ":" + str(seedPort) + "\" \
-                --cluster Rapid --role \"starter\" > ~/" + IP_Addr + "_" + str(seedPort) + ".log 2>~/" + IP_Addr + "_" + str(seedPort) + ".err &"
-      t = Thread(target=self.execute_cmd, args=(global_IP, username, key_filename, command) )
-      list_threads.append(t)
-      t.start()
+      if self.opt == "GossipBroadcast":
+      
+        command = command + "nohup java -server -Xms50m -Xmx50m -jar ~/rapid-examples-1.0-SNAPSHOT-allinone.jar --listenAddress " + \
+                  "\"" + str(listenAddress) + ":" + str(seedPort) + "\" --seedAddress " + "\"" + str(self.seedIPAddr[0]) + ":" + str(ports[0]) + "\" \
+                  --cluster Rapid --role \"starter\" > ~/" + IP_Addr + "_" + str(seedPort) + ".log 2>~/" + IP_Addr + "_" + str(seedPort) + ".err & " 
+      
+      elif self.opt == "Lalith":
+      
+        command = command + "nohup java -server -Xms50m -Xmx50m -jar ~/rapid-lalith.jar --listenAddress " + \
+                  "\"" + str(listenAddress) + ":" + str(seedPort) + "\" --seedAddress " + "\"" + str(self.seedIPAddr[0]) + ":" + str(ports[0]) + "\" \
+                  --cluster Rapid --role \"starter\" > ~/" + IP_Addr + "_" + str(seedPort) + ".log 2>~/" + IP_Addr + "_" + str(seedPort) + ".err & "
+      
+      elif self.opt == "RumorMongering":  
+        command = command + "nohup java -server -Xms50m -Xmx50m -jar ~/rapid-rumor.jar --listenAddress " + \
+                  "\"" + str(listenAddress) + ":" + str(seedPort) + "\" --seedAddress " + "\"" + str(self.seedIPAddr[0]) + ":" + str(ports[0]) + "\" \
+                  --cluster Rapid --role \"starter\" > ~/" + IP_Addr + "_" + str(seedPort) + ".log 2>~/" + IP_Addr + "_" + str(seedPort) + ".err & "
 
-    [t.join() for t in list_threads]
+      
+    #   t = Thread(target=self.execute_cmd, args=(global_IP, username, key_filename, command) )
+    #   list_threads.append(t)
+    #   t.start()
 
+    # [t.join() for t in list_threads]
+    self.execute_cmd(global_IP, username, key_filename, command)
       
   def add_joiner_node(self, global_IP, IP_Addr, seedAddress, seedPort, username, key_filename, no_of_processes):
 
@@ -97,25 +110,34 @@ class RapidDeployer(object):
     for _ in xrange(no_of_processes):
       ports.append(port_getter.next())
     
-    print "Ports :", ports
-    list_threads = []
-
+    # print "Ports :", ports
+    # list_threads = []
+    command = ""
     for listenPort in ports:
-      '''    
-      command = "nohup java -server -Xms50m -Xmx50m -jar ~/rapid-examples-1.0-SNAPSHOT-allinone.jar --listenAddress " + \
-                "\"" + str(listenAddress) + ":" + str(listenPort) + "\" --seedAddress " + "\"" + str(seedAddress) + ":" + str(seedPort) + "\" \
-                --cluster Rapid --role \"joiner\" > ~/" + IP_Addr + "_" + str(listenPort) + ".log 2>~/" + IP_Addr + "_" + str(listenPort) + ".err &"
-      '''
-      command = "nohup java -server -Xms50m -Xmx50m -jar ~/rapid-lalith.jar --listenAddress " + \
-                "\"" + str(listenAddress) + ":" + str(listenPort) + "\" --seedAddress " + "\"" + str(seedAddress) + ":" + str(seedPort) + "\" \
-                --cluster Rapid --role \"joiner\" > ~/" + IP_Addr + "_" + str(listenPort) + ".log 2>~/" + IP_Addr + "_" + str(listenPort) + ".err &"
-      t = Thread(target=self.execute_cmd, args=(global_IP, username, key_filename, command) )
+      if self.opt == "GossipBroadcast":
+      
+        command = command + "nohup java -server -Xms50m -Xmx50m -jar ~/rapid-examples-1.0-SNAPSHOT-allinone.jar --listenAddress " + \
+                  "\"" + str(listenAddress) + ":" + str(listenPort) + "\" --seedAddress " + "\"" + str(seedAddress) + ":" + str(seedPort) + "\" \
+                  --cluster Rapid --role \"joiner\" > ~/" + IP_Addr + "_" + str(listenPort) + ".log 2>~/" + IP_Addr + "_" + str(listenPort) + ".err & " 
+      
+      elif self.opt == "Lalith":
+      
+        command = command + "nohup java -server -Xms50m -Xmx50m -jar ~/rapid-lalith.jar --listenAddress " + \
+                  "\"" + str(listenAddress) + ":" + str(listenPort) + "\" --seedAddress " + "\"" + str(seedAddress) + ":" + str(seedPort) + "\" \
+                  --cluster Rapid --role \"joiner\" > ~/" + IP_Addr + "_" + str(listenPort) + ".log 2>~/" + IP_Addr + "_" + str(listenPort) + ".err & "
+      
+      elif self.opt == "RumorMongering":  
+        command = command + "nohup java -server -Xms50m -Xmx50m -jar ~/rapid-rumor.jar --listenAddress " + \
+                  "\"" + str(listenAddress) + ":" + str(listenPort) + "\" --seedAddress " + "\"" + str(seedAddress) + ":" + str(seedPort) + "\" \
+                  --cluster Rapid --role \"joiner\" > ~/" + IP_Addr + "_" + str(listenPort) + ".log 2>~/" + IP_Addr + "_" + str(listenPort) + ".err & "
+    #   t = Thread(target=self.execute_cmd, args=(global_IP, username, key_filename, command) )
       self.joinIPAddr.append((global_IP, listenAddress, listenPort))
-      list_threads.append(t)
-      t.start()
+    #   list_threads.append(t)
+    #   t.start()
 
-    [t.join() for t in list_threads]
+    # [t.join() for t in list_threads]
       # self.joinPorts.append(listenPort)
+    self.execute_cmd(global_IP, username, key_filename, command)
 
   def kill_process(self, global_IP, local_IP, Port, username, key_filename):
     self.execute_cmd(global_IP, username, key_filename, "pkill -f \"listenAddress " + str(local_IP) + ":" + str(Port) + "\"")
@@ -123,11 +145,16 @@ class RapidDeployer(object):
   def kill_all_processes(self, global_IP, username, key_filename):
     self.execute_cmd(global_IP, username, key_filename, "pkill -f \"rapid\"")
 
-  def getLogs(self, global_IP):
+  def getLogs(self, global_IP, key_filename):
     timeStamp = datetime.now().strftime('%Y-%m-%d+%H:%M:%S')
+    
     os.system("mkdir -p /home/kartik/Development/rapid_tests/logs/" + global_IP + "+" + timeStamp)
-    os.system("scp -i /home/kartik/Development/rapidkey.pem ec2-user@" + global_IP + ":/home/ec2-user/*.log /home/kartik/Development/rapid_tests/logs/" + global_IP + "+" + timeStamp)
-    os.system("scp -i /home/kartik/Development/rapidkey.pem ec2-user@" + global_IP + ":/home/ec2-user/*.err /home/kartik/Development/rapid_tests/logs/" + global_IP + "+" + timeStamp)
+    # os.system("scp -i /home/kartik/Development/rapidkey.pem ec2-user@" + global_IP + ":/home/ec2-user/*.log /home/kartik/Development/rapid_tests/logs/" + global_IP + "+" + timeStamp)
+    # os.system("scp -i /home/kartik/Development/rapidkey.pem ec2-user@" + global_IP + ":/home/ec2-user/*.err /home/kartik/Development/rapid_tests/logs/" + global_IP + "+" + timeStamp)
+    os.system("scp -i " + key_filename + " -o \"StrictHostKeyChecking no\" cc@" + global_IP + ":/home/cc/*.log /home/kartik/Development/rapid_tests/logs/" + global_IP + "+" + timeStamp)
+    os.system("scp -i " + key_filename + " -o \"StrictHostKeyChecking no\" cc@" + global_IP + ":/home/cc/*.err /home/kartik/Development/rapid_tests/logs/" + global_IP + "+" + timeStamp)
+    os.system("scp -i " + key_filename + " -o \"StrictHostKeyChecking no\" cc@" + global_IP + ":/home/cc/*.LOG /home/kartik/Development/rapid_tests/logs/" + global_IP + "+" + timeStamp)
+    os.system("scp -i " + key_filename + " -o \"StrictHostKeyChecking no\" cc@" + global_IP + ":/home/cc/*.ERR /home/kartik/Development/rapid_tests/logs/" + global_IP + "+" + timeStamp)
 
   def inject_asymmetric_drops(self, global_IP, Port, username, key_filename):
     self.execute_cmd(global_IP, username, key_filename, "sudo iptables -A INPUT -j DROP -p tcp --destination-port " + str(Port))
@@ -137,6 +164,11 @@ class RapidDeployer(object):
     self.execute_cmd(global_IP, username, key_filename, "sudo iptables -A INPUT -j DROP -p tcp --destination-port " + str(Port))
     time.sleep(18)
     self.execute_cmd(global_IP, username, key_filename, "sudo iptables -A INPUT -j ACCEPT -p tcp --destination-port " + str(Port))
+
+  def high_packet_drops(self, global_IP, Port, username, key_filename):
+    self.execute_cmd(global_IP, username, key_filename, "sudo iptables -A OUTPUT -p tcp --sport " + str(Port) + " -m statistic --mode random --probability 0.8 -j DROP")
+    time.sleep(60)
+    self.execute_cmd(global_IP, username, key_filename, "sudo iptables --flush")
 # y = RapidDeployer()
 
 # # instances_nos = 20
@@ -172,10 +204,20 @@ class RapidDeployer(object):
 #   y.add_joiner_node(publicIPs[i], privateIPs[i], y.seedIPAddr[0], y.seedPorts[0], "ec2-user", "/home/kartik/Development/rapidkey.pem", 5)
 # # time.sleep(20)
 # # x.add_joiner_node("", x.seedIPAddr[2], x.seedPorts[2], "", "", 7000, 7500, 2)
+parser = argparse.ArgumentParser()
 
-y = RapidDeployer()
+parser.add_argument("-pub", "--public-ips", help='list of publicIPs', required=True, type=str, nargs='+')
+parser.add_argument("-pvt", "--private-ips", help='list of privateIPs', required=True, type=str, nargs='+')
+parser.add_argument("-opt", "--option", help='Implementation option - GossipBroadcast, Lalith, RumorMongering', required=True, type=str)
+opts = parser.parse_args()
+publicIPs, privateIPs = opts.public_ips, opts.private_ips
+
+print opts
+
+y = RapidDeployer(opts.option)
 x = DeployEC2()
 
+'''
 instance_ids = x._get_instance_IDs()
 publicIPs, privateIPs = x._get_instance_IPs(instance_ids)
 
@@ -185,7 +227,7 @@ for ip in publicIPs:
     y.execute_cmd(ip, "ec2-user", "/home/kartik/Development/rapidkey.pem", "nohup python measure.py > " + ip + ".log 2&>" + ip + ".err &")
   except Exception as ex:
     print ex
-
+'''
 while(1):
   print "Options."
   print "1. Deploy Instances"
@@ -196,10 +238,13 @@ while(1):
   print "6. Print running processes"
   print "7. Stop all EC2 instances"
   print "8. Terminate all EC2 instances"
-  print "9. Retrieve Logs"
-  print "10. Reset logs and bandwidth measurement"
-  print "11. Inject Asymmetric packet drops"
-  print "12. Exit"
+  print "9. Start all EC2 instances"
+  print "10. Retrieve Logs"
+  print "11. Reset logs and bandwidth measurement"
+  print "12. Inject Asymmetric packet drops"
+  print "13. High outgoing packet loss injection"
+  print "14. Start network measurement"
+  print "15. Exit"
   
   inp = raw_input()
   
@@ -216,26 +261,30 @@ while(1):
     except Exception as ex:
       print ex
     
-    instance_ids = x._get_instance_IDs()
-    print "Instance IDs :", instance_ids
-    publicIPs, privateIPs = x._get_instance_IPs(instance_ids)
+    # instance_ids = x._get_instance_IDs()
+    # print "Instance IDs :", instance_ids
+    # publicIPs, privateIPs = x._get_instance_IPs(instance_ids)
+    list_threads = []
     time.sleep(30)
     for ip in publicIPs:
       try:
-        y.execute_cmd(ip, "ec2-user", "/home/kartik/Development/rapidkey.pem", "rm -rf /home/ec2-user/*.log && rm -rf /home/ec2-user/*.err")
-        y.execute_cmd(ip, "ec2-user", "/home/kartik/Development/rapidkey.pem", "nohup python measure.py > " + ip + ".log 2&>" + ip + ".err &")
+        t = Thread(target=y.execute_cmd, args=(ip, "cc", "/home/kartik/Development/chamkey.pem", "rm -rf /home/cc/*.log && rm -rf /home/cc/*.err && nohup python measure.py > " + ip + ".log 2&>" + ip + ".err &") )
+        list_threads.append(t)
+        t.start()
       except Exception as ex1:
         print ex1
+
+    [t.join() for t in list_threads]
     
 
     print "Deploy Finished"
 
   elif inp == '2':
     N = int(raw_input())
-    instance_ids = x._get_instance_IDs()
-    publicIPs, privateIPs = x._get_instance_IPs(instance_ids)
+    # instance_ids = x._get_instance_IDs()
+    # publicIPs, privateIPs = x._get_instance_IPs(instance_ids)
     try:
-      y.add_starter_nodes(publicIPs[0], privateIPs[0], "ec2-user", "/home/kartik/Development/rapidkey.pem", N)
+      y.add_starter_nodes(publicIPs[0], privateIPs[0], "cc", "/home/kartik/Development/chamkey.pem", N)
     except Exception as ex:
       print ex
 
@@ -246,25 +295,32 @@ while(1):
     no_of_processes, no_of_nodes = raw_input().split()
     no_of_processes = int(no_of_processes)
     no_of_nodes = int(no_of_nodes)
-    publicIPs, privateIPs = x._get_instance_IPs(instance_ids)
+    list_threads = []
+    # instance_ids = x._get_instance_IDs()
+    # publicIPs, privateIPs = x._get_instance_IPs(instance_ids)
     try:
-      for i in xrange(min(no_of_nodes, len(publicIPs))):
-        y.add_joiner_node(publicIPs[i], privateIPs[i], y.seedIPAddr[0], y.seedPorts[0], "ec2-user", "/home/kartik/Development/rapidkey.pem", no_of_processes)
+      for i in range(1, min(no_of_nodes, len(publicIPs))):
+        rand_gen = random.randint(0, len(y.seedIPAddr) - 1)
+        t = Thread(target=y.add_joiner_node, args=(publicIPs[i], privateIPs[i], y.seedIPAddr[rand_gen], y.seedPorts[rand_gen], "cc", "/home/kartik/Development/chamkey.pem", no_of_processes))
+        list_threads.append(t)
+        t.start()
+
     except Exception as ex:
       print ex
+
+    [t.join() for t in list_threads]
 
     time.sleep(10)
     print "Joiner node spawned"
 
   elif inp == '4':
     N = int(raw_input())
-    instance_ids = x._get_instance_IDs()
     list_threads = []
     for i in xrange(N):
       rand_gen = random.randint(0, len(y.joinIPAddr) - 1)
       try:
         del y.joinIPAddr[rand_gen]
-        t = Thread(target=y.kill_process, args=(y.joinIPAddr[rand_gen][0], y.joinIPAddr[rand_gen][1], y.joinIPAddr[rand_gen][2], "ec2-user", "/home/kartik/Development/rapidkey.pem") )
+        t = Thread(target=y.kill_process, args=(y.joinIPAddr[rand_gen][0], y.joinIPAddr[rand_gen][1], y.joinIPAddr[rand_gen][2], "cc", "/home/kartik/Development/chamkey.pem") )
         list_threads.append(t)
         t.start()
         
@@ -274,12 +330,12 @@ while(1):
     [t.join() for t in list_threads]
 
   elif inp == '5':
-    instance_ids = x._get_instance_IDs()
-    publicIPs, privateIPs = x._get_instance_IPs(instance_ids)
+    # instance_ids = x._get_instance_IDs()
+    # publicIPs, privateIPs = x._get_instance_IPs(instance_ids)
     list_threads = []
     for i in xrange(len(publicIPs)):
       try:
-        t = Thread(target=y.kill_all_processes, args=(publicIPs[i], "ec2-user", "/home/kartik/Development/rapidkey.pem") )
+        t = Thread(target=y.kill_all_processes, args=(publicIPs[i], "cc", "/home/kartik/Development/chamkey.pem") )
         list_threads.append(t)
         t.start()
         # y.execute_cmd(publicIPs[i], "ec2-user", "/home/kartik/Development/rapidkey.pem", "rm -rf /home/ec2-user/*.log && rm -rf /home/ec2-user/*.err")
@@ -322,14 +378,24 @@ while(1):
       print ex
 
   elif inp == '9':
+    try:
+      instance_ids = x._get_instance_IDs()
+      print "Starting Instance IDs :", instance_ids
+      x.start_instances(instance_ids)
+    except Exception as ex:
+      print ex
+
+  elif inp == '10':
     
-    instance_ids = x._get_instance_IDs()
-    publicIPs, privateIPs = x._get_instance_IPs(instance_ids)
+    # instance_ids = x._get_instance_IDs()
+    # publicIPs, privateIPs = x._get_instance_IPs(instance_ids)
     list_threads = []
 
     for ip in publicIPs:
       try:
-        t = Thread(target=y.getLogs, args=(ip))
+        # print ip
+        t = Thread(target=y.getLogs, args=(ip, "/home/kartik/Development/chamkey.pem"))
+        # y.getLogs(ip)
         list_threads.append(t)
         t.start()
       except Exception as ex:
@@ -337,14 +403,14 @@ while(1):
 
     [t.join() for t in list_threads]
 
-  elif inp == '10':
-    instance_ids = x._get_instance_IDs()
-    publicIPs, privateIPs = x._get_instance_IPs(instance_ids)
+  elif inp == '11':
+    # instance_ids = x._get_instance_IDs()
+    # publicIPs, privateIPs = x._get_instance_IPs(instance_ids)
     list_threads = []
 
     for ip in publicIPs:
       try:
-        t = Thread(target=y.execute_cmd, args=(ip, "ec2-user", "/home/kartik/Development/rapidkey.pem", "rm -rf /home/ec2-user/*.log && rm -rf /home/ec2-user/*.err && nohup python measure.py > " + ip + ".log 2&>" + ip + ".err &") )
+        t = Thread(target=y.execute_cmd, args=(ip, "cc", "/home/kartik/Development/chamkey.pem", "rm -rf /home/cc/*.log && rm -rf /home/cc/*.err && rm -rf /home/cc/*.ERR && rm -rf /home/cc/*.LOG && sudo iptables --flush && pkill -f measure") )
         list_threads.append(t)
         t.start()
         # y.execute_cmd(ip, "ec2-user", "/home/kartik/Development/rapidkey.pem", "nohup python measure.py > " + ip + ".log 2&>" + ip + ".err &")
@@ -353,22 +419,48 @@ while(1):
 
     [t.join() for t in list_threads]
 
-  elif inp == '11':
+  elif inp == '12':
     N = int(raw_input())
-    instance_ids = x._get_instance_IDs()
     list_threads = []
 
     for i in xrange(N):
       rand_gen = random.randint(0, len(y.joinIPAddr) - 1)
       try:
-        t = Thread(target=y.inject_asymmetric_drops, args=(y.joinIPAddr[rand_gen][0], y.joinIPAddr[rand_gen][2], "ec2-user", "/home/kartik/Development/rapidkey.pem") )
+        t = Thread(target=y.inject_asymmetric_drops, args=(y.joinIPAddr[rand_gen][0], y.joinIPAddr[rand_gen][2], "cc", "/home/kartik/Development/chamkey.pem") )
         list_threads.append(t)
         t.start()
-        # del y.joinIPAddr[rand_gen]
+        del y.joinIPAddr[rand_gen]
       except Exception as ex:
         print ex
 
     [t.join() for t in list_threads]
 
-  elif inp == '12':
+  elif inp == '13':
+    N = int(raw_input())
+    list_threads = []
+
+    for i in xrange(N):
+      rand_gen = random.randint(0, len(y.joinIPAddr) - 1)
+      try:
+        t = Thread(target=y.high_packet_drops, args=(y.joinIPAddr[rand_gen][0], y.joinIPAddr[rand_gen][2], "cc", "/home/kartik/Development/chamkey.pem") )
+        list_threads.append(t)
+        t.start()
+        del y.joinIPAddr[rand_gen]
+      except Exception as ex:
+        print ex
+
+    [t.join() for t in list_threads]
+
+  elif inp == '14':
+    list_threads = []
+    for ip in publicIPs:
+      try:
+        t = Thread(target=y.execute_cmd, args=(ip, "cc", "/home/kartik/Development/chamkey.pem", "nohup python measure.py > " + ip + ".LOG 2&>" + ip + ".ERR &"))
+        list_threads.append(t)
+        t.start()
+      except Exception as ex:
+        print ex
+    [t.join() for t in list_threads]
+
+  elif inp == '15':
     break
