@@ -359,7 +359,6 @@ public final class MembershipService {
             else {
                 knownMsgs.add(false);
             }
-            knownMsgs.add(false);
             linkUpdateBroadcaster.broadcast(m);
             final ListenableFuture<RapidResponse> f = handleMessage(m);
         }
