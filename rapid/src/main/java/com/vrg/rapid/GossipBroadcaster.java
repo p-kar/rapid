@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -88,7 +89,7 @@ final class GossipBroadcaster implements IBroadcaster {
     private final IMessagingClient messagingClient;
     private final Lock broadcastLock = new ReentrantLock();
     private final Thread gossipThread;
-    private boolean shutdown;
+    private AtomicBoolean shutdown = new AtomicBoolean(false);
 
     private static class GossipMessageStruct {
         public int numRetransmitsLeft;
@@ -149,11 +150,12 @@ final class GossipBroadcaster implements IBroadcaster {
 
         @Override
         public void run() {
-            while (!shutdown) {
+            while (!shutdown.get()) {
+//                System.err.println(ThreadLocalRandom.current().nextInt(0, 1000));
+                final List<RapidRequest> msgs = new ArrayList<>();
                 broadcastLock.lock();
                 try {
                     if (!sendQueue.isEmpty()) {
-                        final List<RapidRequest> msgs = new ArrayList<>(sendQueue.size());
                         final Iterator<Map.Entry<Integer, GossipMessageStruct>> it = sendQueue.entrySet().iterator();
                         while (it.hasNext()) {
                             final Map.Entry<Integer, GossipMessageStruct> pair = it.next();
@@ -166,14 +168,16 @@ final class GossipBroadcaster implements IBroadcaster {
                             msgs.add(gossipMsgStruct.msg);
                             gossipMsgStruct.numRetransmitsLeft--;
                         });
-                        final GossipUpdateMessage gossipMsg = GossipUpdateMessage.newBuilder()
-                                .addAllMessages(msgs)
-                                .build();
-                        final RapidRequest msgToSend = Utils.toRapidRequest(gossipMsg);
                         Collections.shuffle(recipients, ThreadLocalRandom.current());
-                        for (int i = 0; i < Math.min(gossipNodes, recipients.size()); ++i) {
-                            Futures.addCallback(messagingClient.sendMessageBestEffort(recipients.get(i), msgToSend),
-                                new GossipCallback(recipients.get(i)));
+                        if (msgs.size() > 0) {
+                            final GossipUpdateMessage gossipMsg = GossipUpdateMessage.newBuilder()
+                                    .addAllMessages(msgs)
+                                    .build();
+                            final RapidRequest msgToSend = Utils.toRapidRequest(gossipMsg);
+                            for (int i = 0; i < Math.min(gossipNodes, recipients.size()); ++i) {
+                                Futures.addCallback(messagingClient.sendMessageBestEffort(recipients.get(i), msgToSend),
+                                        new GossipCallback(recipients.get(i)));
+                            }
                         }
                     }
                 } finally {
@@ -184,6 +188,35 @@ final class GossipBroadcaster implements IBroadcaster {
                         e.printStackTrace();
                     }
                 }
+            }
+        }
+    }
+
+    private class GossipResponseHandler implements Runnable {
+        private final GossipResponse response;
+
+        public GossipResponseHandler(final GossipResponse response) {
+            this.response = response;
+        }
+
+        @Override
+        public void run() {
+            broadcastLock.lock();
+            try {
+                for (int i = 0; i < response.getKnownGossipsList().size(); i++) {
+                    if (response.getKnownGossips(i)) {
+                        final int msgHash = response.getGossipHashes(i);
+                        if (ThreadLocalRandom.current().nextInt(0, 3) == 0) {
+                            if (sendQueue.containsKey(msgHash)) {
+                                doneQueue.put(msgHash, sendQueue.get(msgHash));
+                                sendQueue.remove(msgHash);
+                            }
+                        }
+                    }
+                }
+            }
+            finally {
+                broadcastLock.unlock();
             }
         }
     }
@@ -205,23 +238,8 @@ final class GossipBroadcaster implements IBroadcaster {
                 return;
             }
             final GossipResponse gossipResponse = response.getGossipResponse();
-            for (int i = 0; i < gossipResponse.getKnownGossipsList().size(); i++) {
-                if (gossipResponse.getKnownGossips(i)) {
-                    final int msgHash = gossipResponse.getGossipHashes(i);
-                    if (ThreadLocalRandom.current().nextInt(0, 3) == 0) {
-                        broadcastLock.lock();
-                        try {
-                            if (sendQueue.containsKey(msgHash)) {
-                                doneQueue.put(msgHash, sendQueue.get(msgHash));
-                                sendQueue.remove(msgHash);
-                            }
-                        }
-                        finally {
-                            broadcastLock.unlock();
-                        }
-                    }
-                }
-            }
+            (new Thread(new GossipResponseHandler(gossipResponse))).start();
+
         }
 
         @Override
@@ -237,13 +255,12 @@ final class GossipBroadcaster implements IBroadcaster {
         this.myAddr = myAddr;
         this.sendQueue = new HashMap<>();
         this.doneQueue = new HashMap<>();
-        this.shutdown = false;
         this.gossipThread = new Thread(new GossipBroadcastBackgroundService());
         this.gossipThread.start();
     }
 
     public void shutdown() {
-        this.shutdown = true;
+        this.shutdown.compareAndSet(false, true);
         try {
             this.gossipThread.join();
         }

@@ -78,7 +78,7 @@ public final class MembershipService {
     private final WatermarkBuffer watermarkBuffer;
     private final Endpoint myAddr;
     private final IBroadcaster paxosBroadcaster;
-    private IBroadcaster linkUpdateBroadcaster;
+    private final IBroadcaster linkUpdateBroadcaster;
     private final Map<Endpoint, LinkedBlockingDeque<SettableFuture<RapidResponse>>> joinersToRespondTo =
             new HashMap<>();
     private final Map<Endpoint, NodeId> joinerUuid = new HashMap<>();
@@ -362,7 +362,7 @@ public final class MembershipService {
             linkUpdateBroadcaster.broadcast(m);
             final ListenableFuture<RapidResponse> f = handleMessage(m);
         }
-        assert hashes.size() == knownMsgs.size();
+//        assert hashes.size() == knownMsgs.size();
         future.set(Utils.toRapidResponse(GossipResponse.newBuilder()
                                                         .addAllKnownGossips(knownMsgs)
                                                         .addAllGossipHashes(hashes)
