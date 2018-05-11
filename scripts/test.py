@@ -84,7 +84,7 @@ class RapidDeployer(object):
                   --cluster Rapid --role \"starter\" > ~/" + IP_Addr + "_" + str(seedPort) + ".log 2>~/" + IP_Addr + "_" + str(seedPort) + ".err & "
       
       elif self.opt == "RumorMongering":  
-        command = command + "nohup java -server -Xms50m -Xmx50m -jar ~/rapid-rumor.jar --listenAddress " + \
+        command = command + "nohup java -server -Xms50m -Xmx50m -jar ~/rapid-rumor-2.jar --listenAddress " + \
                   "\"" + str(listenAddress) + ":" + str(seedPort) + "\" --seedAddress " + "\"" + str(self.seedIPAddr[0]) + ":" + str(ports[0]) + "\" \
                   --cluster Rapid --role \"starter\" > ~/" + IP_Addr + "_" + str(seedPort) + ".log 2>~/" + IP_Addr + "_" + str(seedPort) + ".err & "
 
@@ -127,7 +127,7 @@ class RapidDeployer(object):
                   --cluster Rapid --role \"joiner\" > ~/" + IP_Addr + "_" + str(listenPort) + ".log 2>~/" + IP_Addr + "_" + str(listenPort) + ".err & "
       
       elif self.opt == "RumorMongering":  
-        command = command + "nohup java -server -Xms50m -Xmx50m -jar ~/rapid-rumor.jar --listenAddress " + \
+        command = command + "nohup java -server -Xms50m -Xmx50m -jar ~/rapid-rumor-2.jar --listenAddress " + \
                   "\"" + str(listenAddress) + ":" + str(listenPort) + "\" --seedAddress " + "\"" + str(seedAddress) + ":" + str(seedPort) + "\" \
                   --cluster Rapid --role \"joiner\" > ~/" + IP_Addr + "_" + str(listenPort) + ".log 2>~/" + IP_Addr + "_" + str(listenPort) + ".err & "
     #   t = Thread(target=self.execute_cmd, args=(global_IP, username, key_filename, command) )
@@ -143,7 +143,7 @@ class RapidDeployer(object):
     self.execute_cmd(global_IP, username, key_filename, "pkill -f \"listenAddress " + str(local_IP) + ":" + str(Port) + "\"")
     
   def kill_all_processes(self, global_IP, username, key_filename):
-    self.execute_cmd(global_IP, username, key_filename, "pkill -f \"rapid\"")
+    self.execute_cmd(global_IP, username, key_filename, "pkill -f \"listenAddress\"")
 
   def getLogs(self, global_IP, key_filename):
     timeStamp = datetime.now().strftime('%Y-%m-%d+%H:%M:%S')
